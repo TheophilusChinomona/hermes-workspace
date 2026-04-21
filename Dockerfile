@@ -16,7 +16,6 @@ WORKDIR /app
 
 # Install deps (cache-friendly: copy only manifests first)
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
-COPY workspace-daemon/package.json workspace-daemon/
 RUN pnpm install --frozen-lockfile
 
 # Copy sources and build
@@ -36,6 +35,7 @@ WORKDIR /app
 COPY --from=build --chown=workspace:workspace /app/dist ./dist
 COPY --from=build --chown=workspace:workspace /app/node_modules ./node_modules
 COPY --from=build --chown=workspace:workspace /app/package.json ./package.json
+COPY --from=build --chown=workspace:workspace /app/server-entry.js ./server-entry.js
 COPY --from=build --chown=workspace:workspace /app/skills ./skills
 
 USER workspace
@@ -49,4 +49,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3000/ >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "--max-old-space-size=2048", "dist/server/server.js"]
+CMD ["node", "--max-old-space-size=2048", "server-entry.js"]
