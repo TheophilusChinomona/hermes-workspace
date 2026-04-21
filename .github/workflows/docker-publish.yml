@@ -15,7 +15,7 @@ name: Build & publish Docker image
 # and a watchtower/webhook upstream does the pull + recreate.
 on:
   push:
-    branches: [main, staging, stable]
+    branches: [main, staging, stable, prod]
     tags: ['v*']
   workflow_dispatch:
 
@@ -60,6 +60,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
 
       - name: Build & push
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -70,3 +71,21 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Notify release channel
+        if: success() && github.event_name == 'push' && (github.ref == 'refs/heads/stable' || github.ref == 'refs/heads/prod')
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "DISCORD_RELEASE_WEBHOOK not set — skipping notification"
+            exit 0
+          fi
+          CHANNEL="${GITHUB_REF_NAME}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CHANNEL}"
+          DIGEST="${{ steps.build.outputs.digest }}"
+          CHANGELOG=$(git log --pretty='- %s' ${{ github.event.before }}..${{ github.sha }} 2>/dev/null | head -20)
+          [ -z "$CHANGELOG" ] && CHANGELOG="(no commit range available)"
+          BODY=$(jq -nc --arg img "$IMAGE" --arg d "$DIGEST" --arg ch "$CHANGELOG" --arg c "$CHANNEL" \
+            '{content: "**\($c) release** — \($img)\n`\($d)`\n\n\($ch)"}')
+          curl -sS -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d "$BODY"
