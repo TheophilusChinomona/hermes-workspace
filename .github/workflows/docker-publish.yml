@@ -1,17 +1,21 @@
 name: Build & publish Docker image
 
-# Publishes Project Workspace to GitHub Container Registry (GHCR) so users
-# can deploy via Coolify / Easypanel / Dokploy / any Docker host with:
+# Publishes the workspace image to GitHub Container Registry (GHCR).
 #
-#   image: ghcr.io/outsourc-e/hermes-workspace:latest
+# Tagging strategy (Athena-style — every branch is its own release channel):
+#   push to main      -> :main, :main-<sha>           (devs, bleeding edge)
+#   push to staging   -> :staging, :staging-<sha>     (test instances)
+#   push to stable    -> :stable                      (client production)
+#   push v* tag       -> :<version>, :<major>.<minor> (versioned pins)
+#   manual dispatch   -> branch tag only (no :latest)
 #
-# Triggers:
-#   - push to main        -> tags: latest, main, main-<sha>
-#   - push a git tag v*   -> tags: <version>, <major>.<minor>, latest
-#   - manual dispatch     -> tags: latest
+# Intentionally NO :latest tag — clients pin a channel and we move the
+# channel forward only when we mean to. Compose files reference
+#   image: ghcr.io/<owner>/hermes-workspace:stable
+# and a watchtower/webhook upstream does the pull + recreate.
 on:
   push:
-    branches: [main]
+    branches: [main, staging, stable]
     tags: ['v*']
   workflow_dispatch:
 
@@ -49,10 +53,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
             type=ref,event=tag
-            type=sha,prefix=main-,enable={{is_default_branch}}
+            type=sha,prefix={{branch}}-,enable=${{ github.event_name == 'push' && github.ref_type == 'branch' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
